@@ -308,6 +308,9 @@ sources = files(
   'downstream-placeholder.cc',
   'dummy-store.cc',
   'export-import.cc',
+  # PLAN 3.1.2/3.1.3/3.1.4 (ExtOS): runtime store relocation, output layout and
+  # the explicit weave sandbox opt-out. ExtOS addition; upstream targets unchanged.
+  'extos-store-layout.cc',
   'filetransfer.cc',
   'gc.cc',
   'globals.cc',

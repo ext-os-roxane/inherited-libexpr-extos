@@ -4,6 +4,8 @@
 #include "nix/store/uds-remote-store.hh"
 #include "nix/store/globals.hh"
 #include "nix/util/environment-variables.hh"
+/* PLAN 3.1.2 (ExtOS): `EXTOS_REPOSITORY` counts as an explicit store root. */
+#include "nix/store/extos-store-layout.hh"
 
 #include <filesystem>
 
@@ -70,7 +72,12 @@ ref<StoreConfig> resolveStoreConfig(StoreReference && storeURI)
 #ifdef __linux__
                 else if (
                     !pathExists(localFSStoreConfig.stateDir.get()) && params.empty() && !isRootUser()
-                    && !getEnvOs("NIX_STORE_DIR").has_value() && !getEnvOs("NIX_STATE_DIR").has_value()) {
+                    && !getEnvOs("NIX_STORE_DIR").has_value() && !getEnvOs("NIX_STATE_DIR").has_value()
+                    /* PLAN 3.1.2 (ExtOS): an explicit EXTOS_REPOSITORY already
+                       names the store root, so the implicit
+                       `~/.local/share/nix/root` chroot store must not kick in
+                       and scatter a second store outside the repository. */
+                    && !extosRepositoryRoot().has_value()) {
                     /* If /nix doesn't exist, there is no daemon socket, and
                        we're not root, then automatically set up a chroot
                        store in ~/.local/share/nix/root. */

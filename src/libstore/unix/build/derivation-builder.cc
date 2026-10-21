@@ -20,6 +20,8 @@
 #include "nix/store/build/derivation-env-desugar.hh"
 #include "nix/util/terminal.hh"
 #include "nix/store/filetransfer.hh"
+/* PLAN 3.1.4 (ExtOS): explicit `EXTOS_WEAVE_NO_SANDBOX` opt-out. */
+#include "nix/store/extos-store-layout.hh"
 
 #include <sys/un.h>
 #include <fcntl.h>
@@ -2114,6 +2116,22 @@ std::unique_ptr<DerivationBuilder, DerivationBuilderDeleter> makeDerivationBuild
         else if (localSettings.sandboxMode == smRelaxed)
             // FIXME: cache derivationType
             useSandbox = params.drv.type().isSandboxed() && !params.drvOptions.noChroot;
+    }
+
+    /* PLAN 3.1.4 (ExtOS): explicit weave opt-out.
+     *
+     * `EXTOS_WEAVE_NO_SANDBOX=1` is exactly equivalent to passing
+     * `--no-sandbox` for this process; it is never implied, and any other
+     * value leaves the upstream decision above untouched. The safety contract
+     * (privilege drop, callers, daemon inheritance) is documented in
+     * `nix/store/extos-store-layout.hh`. */
+    if (useSandbox && extosWeaveSandboxOptOut()) {
+        if (localSettings.sandboxMode == smEnabled)
+            warn(
+                "PLAN 3.1.4: disabling the sandbox for derivation '%s' because "
+                "EXTOS_WEAVE_NO_SANDBOX=1 (explicit weave opt-out)",
+                store.printStorePath(params.drvPath));
+        useSandbox = false;
     }
 
     if (store.storeDir != store.config->realStoreDir.get()) {

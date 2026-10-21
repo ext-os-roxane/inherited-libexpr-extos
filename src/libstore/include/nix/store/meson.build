@@ -40,6 +40,8 @@ headers = [ config_pub_h ] + files(
   'dummy-store-impl.hh',
   'dummy-store.hh',
   'export-import.hh',
+  # PLAN 3.1.2/3.1.3/3.1.4 (ExtOS).
+  'extos-store-layout.hh',
   'filetransfer-impl.hh',
   'filetransfer.hh',
   'gc-store.hh',

@@ -8,6 +8,8 @@
 #include "nix/store/store-api.hh"
 #include "nix/store/store-open.hh"
 #include "nix/store/outputs-query.hh"
+/* PLAN 3.1.2 (ExtOS): runtime store relocation via EXTOS_REPOSITORY. */
+#include "nix/store/extos-store-layout.hh"
 #include "nix/util/util.hh"
 #include "nix/store/nar-info-disk-cache.hh"
 #include "nix/util/thread-pool.hh"
@@ -49,6 +51,22 @@ static std::string canonStoreDir(std::filesystem::path path)
 StoreConfigBase::StoreDirSetting::StoreDirSetting(Config * options, FilePathType pathType)
     : BaseSetting<std::string>(
           [pathType]() -> std::string {
+              /* PLAN 3.1.2 (ExtOS): when `EXTOS_REPOSITORY` is set, the
+                 logical store directory is `<EXTOS_REPOSITORY>/store`. It
+                 takes precedence over `NIX_STORE_DIR`/`NIX_STORE` so that a
+                 single ExtOS variable relocates every subsystem at once.
+                 When the variable is unset (`extosStoreDir()` is empty) the
+                 code below is verbatim upstream and the default stays
+                 `NIX_STORE_DIR` bit-for-bit. */
+              if (auto extosStoreDirOverride = extosStoreDir()) {
+                  switch (pathType) {
+                  case FilePathType::Unix:
+                      return canonStoreDir(*extosStoreDirOverride);
+                  case FilePathType::Native:
+                      return canonStoreDir(std::filesystem::path{*extosStoreDirOverride});
+                  }
+              }
+
               auto envOverrides = getEnvOsNonEmpty(OS_STR("NIX_STORE_DIR")).or_else([] {
                   return getEnvOsNonEmpty(OS_STR("NIX_STORE"));
               });
@@ -1250,13 +1268,32 @@ void Store::signRealisation(Realisation & realisation)
 
 const std::filesystem::path & StoreConfig::getStateDir() const
 {
+    /* PLAN 3.1.2 (ExtOS): relocate mutable state with the store.
+       `EXTOS_REPOSITORY` keeps it inside the repository (`<repo>/state`), so a
+       relocated store never tries to create `/nix/var/nix/profiles` — which
+       fails for any non-root caller. Resolved lazily (not cached in the global
+       `settings`, which is initialised before the environment can change).
+       Unset => verbatim upstream. */
+    if (auto extosState = extosStateDir()) {
+        /* Last writer wins: only changes if the caller mutates the variable. */
+        static std::filesystem::path extosStatePath;
+        extosStatePath = *extosState;
+        return extosStatePath;
+    }
     return settings.nixStateDir;
 }
 
 const std::filesystem::path & StoreConfig::getLogDir() const
 {
-    static std::filesystem::path logDir = [] {
-        return getEnvOsNonEmpty(OS_STR("NIX_LOG_DIR"))
+    /* PLAN 3.1.2 (ExtOS): resolved per call, mirroring `getStateDir()` above.
+       A function-local static used to freeze the first resolution here, so a
+       later `EXTOS_REPOSITORY` change moved the state dir but not the log dir.
+       Unset => verbatim upstream resolution. */
+    static std::filesystem::path logDir;
+    if (auto extosLog = extosLogDir())
+        logDir = canonPath(std::filesystem::path{*extosLog});
+    else
+        logDir = getEnvOsNonEmpty(OS_STR("NIX_LOG_DIR"))
             .transform([](auto && s) { return std::filesystem::path(s); })
             .or_else([]() -> std::optional<std::filesystem::path> {
 #ifdef _WIN32
@@ -1270,7 +1307,6 @@ const std::filesystem::path & StoreConfig::getLogDir() const
             })
             .transform([](auto && s) { return canonPath(s); })
             .value();
-    }();
     return logDir;
 }
 

@@ -1,6 +1,8 @@
 #include "nix/store/derivations.hh"
 #include "nix/store/downstream-placeholder.hh"
 #include "nix/store/store-api.hh"
+/* PLAN 3.1.3 (ExtOS): `<origin>/<name>/<version>` output layout helper. */
+#include "nix/store/extos-store-layout.hh"
 #include "nix/util/types.hh"
 #include "nix/util/util.hh"
 #include "nix/store/common-protocol.hh"
@@ -1027,6 +1029,30 @@ Source & readDerivation(Source & in, const StoreDirConfig & store, BasicDerivati
 
 void writeDerivation(Sink & out, const StoreDirConfig & store, const BasicDerivation & drv)
 {
+    /* PLAN 3.1.3 (ExtOS): surface the ExtOS-visible output layout.
+     *
+     * Nix store paths are, by specification, a single component below the
+     * store directory (`<store>/<hash>-<name>`), so the `<origin>/<name>/
+     * <version>` layout cannot be stored *in* a `StorePath` without breaking
+     * the path grammar and every protocol that carries one. Instead the
+     * layout is derived from the derivation's manifest metadata and emitted
+     * alongside the hashed path: internal bookkeeping (`.drv` bytes, GC roots,
+     * references) keeps the upstream hashed path bit-for-bit, while the
+     * weave-visible artifact directory is `<repo>/store/<origin>/<name>/
+     * <version>`. `extosOutputLayoutPath()` is the single implementation; the
+     * JSON bridge in src/libexpr-c/extos_bridge.cc reports the same value.
+     *
+     * No-op when `EXTOS_REPOSITORY` is unset. */
+    if (extosRepositoryRoot())
+        if (auto identity = extosOutputIdentityFromAttrs(drv.env)) {
+            for (auto & [outputName, _] : drv.outputs)
+                if (auto layout = extosOutputLayoutPath(store.storeDir, *identity, outputName))
+                    debug("PLAN 3.1.3: ExtOS output layout for '%s' output '%s': %s",
+                        drv.name,
+                        outputName,
+                        *layout);
+        }
+
     out << drv.outputs.size();
     for (auto & i : drv.outputs) {
         out << i.first;

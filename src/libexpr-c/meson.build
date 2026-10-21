@@ -33,6 +33,8 @@ sources = files(
   'nix_api_expr.cc',
   'nix_api_external.cc',
   'nix_api_value.cc',
+  # PLAN 3.1.6 (ExtOS): C ABI bridge evaluated from Rust via libloading.
+  'extos_bridge.cc',
 )
 
 include_dirs = [ include_directories('.') ]
@@ -42,6 +44,8 @@ headers = files(
   'nix_api_expr_internal.h',
   'nix_api_external.h',
   'nix_api_value.h',
+  # PLAN 3.1.6 (ExtOS).
+  'extos_bridge.h',
 )
 
 subdir('nix-meson-build-support/export-all-symbols')
